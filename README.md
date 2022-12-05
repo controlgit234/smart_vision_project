@@ -3,5 +3,514 @@ smart_vision_project
 
 ## 작품의 코드
 ```
-int c=0;
+//스마트비전 프로젝트 - 주방보조 프로그램
+
+#define _CRT_SECURE_NO_WARNINGS //time_t 를 쓰기 위한 추가
+#include<iostream> 
+#include"opencv2/opencv.hpp"
+#include <sstream>
+#include <string>
+#include <fstream>
+#include <cstdlib>
+#include <ctime>
+
+using namespace std;
+using namespace cv;
+void on_mouse(int event, int x, int y, int flags, void* userdata);
+int camera_onoff = 0;
+string scan_off = "Waiting for food ingredient detection"; 
+string scan_on = "During the food ingredient detection operation";
+string consumption_input = "Input consumption ingredient information";
+string amount_of_storage = "Output storage ingredient information";
+string program_end = "Shutting down a Program";
+using namespace cv::dnn;
+const float CONFIDENCE_THRESHOLD = 0.5;
+const float NMS_THRESHOLD = 0.5;
+const int NUM_CLASSES = 3;
+// colors for bounding boxes
+const cv::Scalar colors[] = { {0, 255, 255},{255, 255, 0},{0, 255, 0},{255, 0, 0} };
+const auto NUM_COLORS = sizeof(colors) / sizeof(colors[0]);
+std::vector<std::string> class_names = { "tomato","onion","paprika" };
+
+Mat dect_mat = Mat::zeros(NUM_CLASSES, 9, CV_32SC1);
+
+void GUI_init(string& gui_window, Mat& gui_img); //GUI의 디자인 함수
+void input_image_capture(); //카메라를 키고 사진을 저장하는 함수
+void food_ingredients_dect(); // 저장한 사진의 식재료를 검출하는 함수
+void pick_keeping_method(); //선택방법을 물어보는 함수
+void add_ingredients(const Mat& mat); //식재료의 정보를 메모장에 기록하는 함수
+Mat out_amount_of_storage(); //현재 저장된 식재료 정보를 출력하는 함수
+void program_exit(); //프로그램을 종료하는 함수
+void erase_ingredients(); //선택한 식재료를 삭제하는 함수
+
+int main() {
+
+	string gui_window = "Control GUI"; //GUI의 윈도우이름을 생성
+	namedWindow(gui_window); // GUI윈도우 생성
+
+	Mat gui_img(500, 500, CV_8UC3, Scalar(255, 255, 255)); // GUI Mat 객체 생성
+	
+	GUI_init(gui_window, gui_img); // GUI 디자인을 만들어줌
+
+	setMouseCallback("Control GUI", on_mouse, &gui_img); //GUI에 이벤트 핸들러 추가
+	imshow("Control GUI", gui_img); //GUI 출력
+
+	while (1) { if (waitKey() == 27) break; } //esc를 누르면 종료
+	return 0; // 메인함수 반환문
+
+} //메인함수 종료
+
+void on_mouse(int event, int x, int y, int flags, void* userdata) {
+
+	Mat gui_img = *(Mat*)userdata;
+	if ((event == EVENT_LBUTTONDOWN)) {
+		if ((y < (gui_img.rows / 2)) && (x < (gui_img.cols / 2))) {
+			if (camera_onoff == 0) {
+				for (int r = 0; r < (gui_img.rows / 2); r++)
+					for (int c = 0; c < (gui_img.cols / 2); c++)
+						gui_img.at<Vec3b>(r, c) = Vec3b(255, 204, 0);//카메라 off->on 하늘색으로 변화
+				camera_onoff = 1;
+				putText(gui_img, scan_on, Point((gui_img.cols / 30), gui_img.rows / 4), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+				input_image_capture();
+			}
+			else if (camera_onoff == 1) {
+				for (int r = 0; r < (gui_img.rows / 2); r++)
+					for (int c = 0; c < (gui_img.cols / 2); c++)
+						gui_img.at<Vec3b>(r, c) = Vec3b(0, 102, 255);//카메라 on->off 주황색으로 변화
+				camera_onoff = 0;
+				putText(gui_img, scan_off, Point((gui_img.cols / 12), gui_img.rows / 4), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+				food_ingredients_dect();
+				pick_keeping_method();
+				add_ingredients(dect_mat);
+			}
+
+		}
+	}
+
+	if (flags & EVENT_FLAG_LBUTTON) {
+		if ((y < (gui_img.rows / 2)) && (x > (gui_img.cols / 2))) {
+			for (int r = 0; r < (gui_img.rows / 2); r++)
+				for (int c = ((gui_img.cols / 2) + 1); c < (gui_img.cols); c++)
+					gui_img.at<Vec3b>(r, c) = Vec3b(255, 204, 0);//누르면 하늘색으로 변화
+		}
+		else if ((y > (gui_img.rows / 2)) && (x < (gui_img.cols / 2))) {
+			for (int r = ((gui_img.rows / 2) + 1); r < (gui_img.rows); r++)
+				for (int c = 0; c < (gui_img.cols / 2); c++)
+					gui_img.at<Vec3b>(r, c) = Vec3b(255, 204, 0);//누르면 하늘색으로 변화
+		}
+		else if ((y > (gui_img.rows / 2)) && (x > (gui_img.cols / 2))) {
+			for (int r = ((gui_img.rows / 2) + 1); r < (gui_img.rows); r++)
+				for (int c = ((gui_img.cols / 2) + 1); c < (gui_img.cols); c++)
+					gui_img.at<Vec3b>(r, c) = Vec3b(255, 204, 0);//누르면 하늘색으로 변화
+		}
+		putText(gui_img, consumption_input, Point(((gui_img.cols / 2) + (gui_img.cols / 15)), (gui_img.rows / 4)), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+		putText(gui_img, amount_of_storage, Point((gui_img.cols / 12), ((gui_img.rows / 2) + (gui_img.rows / 4))), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+		putText(gui_img, program_end, Point(((gui_img.cols / 2) + (gui_img.cols / 8)), ((gui_img.rows / 2) + gui_img.rows / 4)), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+
+
+	}
+
+	if (event == EVENT_LBUTTONUP) {
+		if ((y < (gui_img.rows / 2)) && (x > (gui_img.cols / 2))) {
+			for (int r = 0; r < (gui_img.rows / 2); r++)
+				for (int c = ((gui_img.cols / 2) + 1); c < (gui_img.cols); c++)
+					gui_img.at<Vec3b>(r, c) = Vec3b(51, 255, 102);//떼면 녹색으로 변화
+			out_amount_of_storage();
+		}
+		else if ((y > (gui_img.rows / 2)) && (x < (gui_img.cols / 2))) {
+			for (int r = ((gui_img.rows / 2) + 1); r < (gui_img.rows); r++)
+				for (int c = 0; c < (gui_img.cols / 2); c++)
+					gui_img.at<Vec3b>(r, c) = Vec3b(153, 51, 0);//떼면 남색으로 변화
+			erase_ingredients();
+		}
+		else if ((y > (gui_img.rows / 2)) && (x > (gui_img.cols / 2))) {
+			for (int r = ((gui_img.rows / 2) + 1); r < (gui_img.rows); r++)
+				for (int c = ((gui_img.cols / 2) + 1); c < (gui_img.cols); c++)
+					gui_img.at<Vec3b>(r, c) = Vec3b(204, 204, 204);//떼면 회색으로 변화
+			program_exit();
+		}
+
+		putText(gui_img, consumption_input, Point(((gui_img.cols / 2) + (gui_img.cols / 15)), (gui_img.rows / 4)), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+		putText(gui_img, amount_of_storage, Point((gui_img.cols / 12), ((gui_img.rows / 2) + (gui_img.rows / 4))), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+		putText(gui_img, program_end, Point(((gui_img.cols / 2) + (gui_img.cols / 8)), ((gui_img.rows / 2) + gui_img.rows / 4)), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+	}
+
+	imshow("Control GUI", gui_img);
+}
+
+void GUI_init(string& gui_window,Mat& gui_img) {
+	
+	for (int r = 0; r < gui_img.rows; r++)
+		for (int c = 0; c < gui_img.cols; c++)
+		{
+			if ((r < (gui_img.rows / 2)) && (c < (gui_img.cols / 2))) {
+				gui_img.at<Vec3b>(r, c) = Vec3b(0, 102, 255);//카메라온-주황색
+			}
+			else if ((r < (gui_img.rows / 2)) && (c > (gui_img.cols / 2))) {
+				gui_img.at<Vec3b>(r, c) = Vec3b(51, 255, 102);//소비 식재료- 녹색
+			}
+			else if ((r > (gui_img.rows / 2)) && (c < (gui_img.cols / 2))) {
+				gui_img.at<Vec3b>(r, c) = Vec3b(153, 51, 0);//보관량 - 남색
+			}
+			else if ((r > (gui_img.rows / 2)) && (c > (gui_img.cols / 2))) {
+				gui_img.at<Vec3b>(r, c) = Vec3b(204, 204, 204);//프로그램종료-회색
+			}
+			else
+			{
+				gui_img.at<Vec3b>(r, c) = Vec3b(0, 0, 0);
+			}
+		}
+
+	putText(gui_img, scan_off, Point((gui_img.cols / 12), gui_img.rows / 4), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+	putText(gui_img, consumption_input, Point(((gui_img.cols / 2) + (gui_img.cols / 15)), (gui_img.rows / 4)), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+	putText(gui_img, amount_of_storage, Point((gui_img.cols / 12), ((gui_img.rows / 2) + (gui_img.rows / 4))), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+	putText(gui_img, program_end, Point(((gui_img.cols / 2) + (gui_img.cols / 8)), ((gui_img.rows / 2) + gui_img.rows / 4)), FONT_HERSHEY_SIMPLEX, 0.3, Scalar(0, 0, 0));
+
+	imshow("Control GUI", gui_img);
+}
+
+
+
+void input_image_capture() {
+	VideoCapture cap(1);
+	Mat frame;
+	while (1) {
+		cap >> frame;
+		imshow("frame", frame);
+		if (waitKey(100) == 27) { imwrite("input.jpg", frame); destroyWindow("frame"); break; }
+	}
+}
+
+void food_ingredients_dect() {
+	//std::vector<std::string> class_names = { "tomato","onion","paprika" };
+	auto net = cv::dnn::readNetFromDarknet("yolov4-foodingredients3.cfg", "yolov4-foodingredients3_final.weights");
+	//net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+	//net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
+	net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+	net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+	auto output_names = net.getUnconnectedOutLayersNames();
+	cv::Mat frame = imread("input.jpg");
+	cv::Mat blob;
+	std::vector<cv::Mat> detections;
+
+	dect_mat.setTo(0);//검출기능을 여러번 사용시 검출행렬을 초기화 해야함
+
+	if (frame.empty())
+	{
+		cerr << "frame empty" << endl;
+	}
+
+	clock_t start, end;
+	cv::dnn::blobFromImage(frame, blob, 1 / 255.f, cv::Size(416, 416), cv::Scalar(),
+		true, false, CV_32F);
+	net.setInput(blob);
+	start = clock();
+	net.forward(detections, output_names);
+	end = clock();
+
+	std::vector<int> indices[NUM_CLASSES];
+	std::vector<cv::Rect> boxes[NUM_CLASSES];
+	std::vector<float> scores[NUM_CLASSES];
+
+
+	for (auto& output : detections)
+	{
+		const auto num_boxes = output.rows;
+		for (int i = 0; i < num_boxes; i++)
+		{
+			auto x = output.at<float>(i, 0) * frame.cols;
+			auto y = output.at<float>(i, 1) * frame.rows;
+			auto width = output.at<float>(i, 2) * frame.cols;
+			auto height = output.at<float>(i, 3) * frame.rows;
+			cv::Rect rect(x - width / 2, y - height / 2, width, height);
+			for (int c = 0; c < NUM_CLASSES; c++)
+			{
+				auto confidence = *output.ptr<float>(i, 5 + c);
+				if (confidence >= CONFIDENCE_THRESHOLD)
+				{
+					boxes[c].push_back(rect);
+					scores[c].push_back(confidence);
+
+				}
+			}
+		}
+	}
+
+	for (int c = 0; c < NUM_CLASSES; c++)
+		cv::dnn::NMSBoxes(boxes[c], scores[c], 0.0, NMS_THRESHOLD,
+			indices[c]);
+	for (int c = 0; c < NUM_CLASSES; c++)
+	{
+		for (int i = 0; i < indices[c].size(); ++i)
+		{
+			const auto color = colors[c % NUM_COLORS];
+			auto idx = indices[c][i];
+			const auto& rect = boxes[c][idx];
+			cv::rectangle(frame, cv::Point(rect.x, rect.y), cv::Point(rect.x + rect.width,
+				rect.y + rect.height), color, 3);
+			std::string label_str = class_names[c] +
+				": " + cv::format("%.02lf", scores[c][idx]);
+			int baseline;
+			auto label_bg_sz = cv::getTextSize(label_str,
+				cv::FONT_HERSHEY_COMPLEX_SMALL, 1, 1, &baseline);
+			cv::rectangle(frame, cv::Point(rect.x, rect.y - label_bg_sz.height -
+				baseline - 10), cv::Point(rect.x + label_bg_sz.width, rect.y),
+				color, cv::FILLED);
+			cv::putText(frame, label_str, cv::Point(rect.x, rect.y - baseline - 5),
+				cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0, 0, 0));
+		}
+	}
+
+	time_t timer;
+	struct tm* t;
+	timer = time(NULL); // 1970년 1월 1일 0시 0분 0초부터 시작하여 현재까지의 초
+	t = localtime(&timer);
+	for (int r = 0; r < NUM_CLASSES; r++)
+	{
+		if (indices[r].size() != 0) dect_mat.at<int>(r, 0) = 1;
+		dect_mat.at<int>(r, 1) = indices[r].size();
+	}
+
+	for (int r = 0; r < NUM_CLASSES; r++)
+		for (int c = 2; c < 7; c++)
+		{
+			if (c == 2) {
+				dect_mat.at<int>(r, c) = (t->tm_year + 1900);
+			}
+			else if (c == 3) {
+				dect_mat.at<int>(r, c) = (t->tm_mon + 1);
+			}
+			else if (c == 4) {
+				dect_mat.at<int>(r, c) = t->tm_mday;
+			}
+			else if (c == 5) {
+				dect_mat.at<int>(r, c) = t->tm_hour;
+			}
+			else if (c == 6) {
+				dect_mat.at<int>(r, c) = t->tm_min;
+			}
+		}
+
+	//출력한 객체의 이름, 수량 출력
+
+	std::cout << "\n\n";
+	for (int i = 0; i < NUM_CLASSES; i++) {
+		std::cout << class_names[i] << " : " << indices[i].size() << endl;
+	}
+	std::cout << "영상1개의 검출시간 " << end - start << " ms " << endl;
+
+	namedWindow("dect", WINDOW_NORMAL);
+	cv::imshow("dect", frame);
+	while (waitKey() != 27);
+	destroyWindow("dect");
+}
+
+
+void pick_keeping_method() {
+	int choice_num = 0;
+	for (int r = 0; r < NUM_CLASSES; r++) {
+		if (dect_mat.at<int>(r, 0) == 0) continue;
+
+		string file_name = class_names[r] + "_keeping_method_kr_ANSI.txt";
+		string str;
+
+		ifstream file(file_name);
+
+		std::cout << "\n\n " << class_names[r] + " 의 보관법 리스트 " << endl;
+
+		if (file.is_open())
+		{
+			while (!file.eof()) {
+				getline(file, str);
+				std::cout << str << endl;
+			}
+		}
+		file.close();
+
+		std::cout << "\n\n 리스트 에서 " << class_names[r] << "의 원하는 보관방법의 번호를 입력 해주세요 : ";
+		cin >> choice_num;
+		cin.ignore();
+
+		if (choice_num == -1) { cerr << "잘못인식한 사진입니다 \n"; break; }
+
+		string search_num = "#" + to_string(choice_num);
+
+		ifstream file2(file_name);
+		string str2;
+		stringstream ss;
+		int expiration_date = 1000;
+
+		if (file2.is_open())
+		{
+			while (!file2.eof()) {
+				getline(file2, str2);
+				if (str2 == search_num) break;
+
+			}
+
+			while (!file2.eof()) {
+				getline(file2, str2);
+				if (str2.find("보관기간: ") != string::npos) {
+					str2.erase(0, 9);
+					ss.str(str2);
+					break;
+				}
+			}
+		}
+
+		file2.close();
+
+		ss >> expiration_date;
+		dect_mat.at<int>(r, 7) = choice_num;
+		dect_mat.at<int>(r, 8) = expiration_date;
+
+		std::cout << "선택하신 " << class_names[r] << " 의 보관방법의 보관기간은 " << expiration_date << "일 입니다." << endl;
+	}
+	if (choice_num == -1);
+	//else std::cout << dect_mat << endl; //결과행렬 확인용 코드
+};
+
+void add_ingredients(const Mat& mat) {
+	for (int r = 0; r < NUM_CLASSES; r++) {
+		if ((mat.at<int>(r, 0) == 0) || (mat.at<int>(r, 1) == 0) || (mat.at<int>(r, 7) == 0) || (mat.at<int>(r, 8) == 0)) continue;
+		string add = "";
+		for (int c = 0; c < mat.cols; c++) {
+			add += (' ' + to_string(mat.at<int>(r, c)));
+		}
+
+		string add_file_name = class_names[r] + "_amount_of_storage.txt";
+		ofstream ofs(add_file_name, ios::out | ios::app);
+
+		ofs.write(add.c_str(), add.size());
+		ofs << "\n";
+		ofs.close();
+		std::cout << class_names[r] + " 식재료 정보를 파일에 기록하였습니다. \n";
+	}
+}
+
+Mat out_amount_of_storage() {
+	Mat storage_list;
+	for (int r = 0; r < NUM_CLASSES; r++) {
+		string read_file_name = class_names[r] + "_amount_of_storage.txt";
+		ifstream ifs(read_file_name);
+
+		string storage_str;
+
+		if (ifs.is_open())
+		{
+			while (!ifs.eof()) {
+				Mat storage = Mat::zeros(1, 9, CV_32SC1);
+				getline(ifs, storage_str);
+				if (storage_str == "")continue;
+				stringstream ss;
+				ss.str(storage_str);
+				int dump = 0;
+
+				for (int c = 0; c < 9; c++) {
+					if (c == 0) { storage.at<int>(0, c) = r; ss >> dump; }
+					else {
+						ss >> storage.at<int>(0, c);
+					}
+				}
+
+				if (storage.empty()) continue;
+				storage_list.push_back(storage);
+			}
+		}
+		ifs.close();
+	}
+
+	//cout << storage_list << endl; //결과행렬 확인용 코드
+
+	if (storage_list.empty()) { std::cout << "현재 보관된 식재료가 없습니다" << endl; }
+	else {
+		std::cout << "\n\n\n현재 보관된 식재료 정보 \n\n";
+
+		for (int r = 0; r < storage_list.rows; r++) {
+			std::cout << "보관번호: " << r << "   ";
+
+			for (int name = 0; name < class_names.size(); name++) {
+				if (storage_list.at<int>(r, 0) == name) std::cout << class_names[name] << " - ";
+			}
+
+			time_t dect_day, end;
+			struct tm dect_time;
+			double diff;
+
+			int remaining_expiration_date, elapsed_day;
+			int de_year = storage_list.at<int>(r, 2);
+			int de_mon = storage_list.at<int>(r, 3);
+			int de_day = storage_list.at<int>(r, 4);
+
+			dect_time.tm_year = (de_year - 1900);
+			dect_time.tm_mon = (de_mon - 1);
+			dect_time.tm_mday = de_day;
+			dect_time.tm_hour = 0;
+			dect_time.tm_min = 0;
+			dect_time.tm_sec = 0;
+			dect_time.tm_isdst = 0;
+
+			dect_day = mktime(&dect_time);
+			time(&end);
+
+			diff = difftime(end, dect_day);
+			elapsed_day = (diff / (60 * 60 * 24));
+			remaining_expiration_date = (storage_list.at<int>(r, 8) - elapsed_day);
+
+			std::cout << " 수량: " << storage_list.at<int>(r, 1) << " , 구매일: " << de_year << "년 " << de_mon << "월 " << de_day << "일 , 남은 보관기한: " << remaining_expiration_date << endl;
+		}
+	}
+	return storage_list;
+
+}
+
+void program_exit() {
+	abort();
+}
+
+void erase_ingredients() {
+	int num = 0; int amount = 0;
+	Mat storage_list = out_amount_of_storage();
+	std::cout << "\n\n소모한 식재료의 보관번호를 입력해주세요: ";
+	cin >> num;
+	cin.ignore();
+
+	std::cout << "소모한 식재료의 수량을 적어주세요: ";
+	cin >> amount;
+	cin.ignore();
+
+	storage_list.at<int>(num, 1) -= amount;
+	int change_file_class = storage_list.at<int>(num, 0);
+
+	Mat change_list;
+
+	for (int r = 0; r < storage_list.rows; r++) {
+		if ((storage_list.at<int>(r, 0) == change_file_class) && (storage_list.at<int>(r, 1) > 0)) {
+			Mat food(1, 9, CV_32SC1);
+			for (int c = 0; c < 9; c++) {
+				if (c == 0) food.at<int>(0, c) = 1;
+				else food.at<int>(0, c) = storage_list.at<int>(r, c);
+			}
+			change_list.push_back(food);
+		}
+	}
+
+	string file = class_names[change_file_class] + "_amount_of_storage.txt";
+	ofstream ofs(file);
+	ofs << "";
+	ofs.close();
+
+	ofstream ofs2(file, ios::out | ios::app);
+	for (int r = 0; r < change_list.rows; r++) {
+		string str = "";
+		for (int c = 0; c < change_list.cols; c++)
+			str += (' ' + to_string(change_list.at<int>(r, c)));
+		ofs2.write(str.c_str(), str.size());
+		ofs2 << "\n";
+	}
+	ofs2.close();
+
+	std::cout << "\n보괸된 식재료정보를 변경 하였습니다\n";
+}
+
 ```
