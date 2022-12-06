@@ -339,111 +339,111 @@ void pick_keeping_method() {//보관방법 선택기능
 		cin >> choice_num;
 		cin.ignore();
 
-		if (choice_num == -1) { cerr << "잘못인식한 사진입니다 \n"; break; }
+		if (choice_num == -1) { cerr << "잘못인식한 사진입니다 \n"; break; }//만약 잘못인식한 사진이면 보관번호 -1을 입력
 
-		string search_num = "#" + to_string(choice_num);
+		string search_num = "#" + to_string(choice_num);//선택한 보관법 번호으로 이동하기 위한 문자열
 
-		ifstream file2(file_name);
-		string str2;
-		stringstream ss;
-		int expiration_date = 1000;
+		ifstream file2(file_name);//보관법 파일열기
+		string str2;//한줄씩읽기 위한 문자열
+		stringstream ss;//문자열에서 숫자 추출을 위한 객체
+		int expiration_date = 1000;//보관기간 초기화
 
-		if (file2.is_open())
+		if (file2.is_open())//파일 오픈 확인문
 		{
-			while (!file2.eof()) {
-				getline(file2, str2);
-				if (str2 == search_num) break;
+			while (!file2.eof()) {//파일 끝까지 읽기
+				getline(file2, str2);//파일의 한줄씩 문자열에 저장
+				if (str2 == search_num) break;//원하는 보관법 번호로 이동 하면 종료
 
 			}
 
 			while (!file2.eof()) {
-				getline(file2, str2);
-				if (str2.find("보관기간: ") != string::npos) {
-					str2.erase(0, 9);
-					ss.str(str2);
-					break;
+				getline(file2, str2);//한줄씩 읽기
+				if (str2.find("보관기간: ") != string::npos) {//보관기간이 포함되어 있으면 
+					str2.erase(0, 9);//앞의 한글부분을 지운다음
+					ss.str(str2);//문자열의 숫자부분만 객체에 저장
+					break;//반복문 종료
 				}
 			}
 		}
 
-		file2.close();
+		file2.close();//보관방법 파일 닫음
 
-		ss >> expiration_date;
-		dect_mat.at<int>(r, 7) = choice_num;
-		dect_mat.at<int>(r, 8) = expiration_date;
+		ss >> expiration_date;//문자열의 보관기간을 int변수에 저장
+		dect_mat.at<int>(r, 7) = choice_num;//검출벡터에 선택번호 저장
+		dect_mat.at<int>(r, 8) = expiration_date;//검출벡터에 보관기간 저장
 
-		std::cout << "선택하신 " << class_names[r] << " 의 보관방법의 보관기간은 " << expiration_date << "일 입니다." << endl;
+		std::cout << "선택하신 " << class_names[r] << " 의 보관방법의 보관기간은 " << expiration_date << "일 입니다." << endl;//결과 출력
 	}
-	if (choice_num == -1);
+	//if (choice_num == -1);//결과 행렬 확인용
 	//else std::cout << dect_mat << endl; //결과행렬 확인용 코드
 };
 
-void add_ingredients(const Mat& mat) {
-	for (int r = 0; r < NUM_CLASSES; r++) {
-		if ((mat.at<int>(r, 0) == 0) || (mat.at<int>(r, 1) == 0) || (mat.at<int>(r, 7) == 0) || (mat.at<int>(r, 8) == 0)) continue;
-		string add = "";
-		for (int c = 0; c < mat.cols; c++) {
-			add += (' ' + to_string(mat.at<int>(r, c)));
+void add_ingredients(const Mat& mat) {//검출식재료를 저장하는 함수
+	for (int r = 0; r < NUM_CLASSES; r++) {//클래스수 만큼 반복
+		if ((mat.at<int>(r, 0) == 0) || (mat.at<int>(r, 1) == 0) || (mat.at<int>(r, 7) == 0) || (mat.at<int>(r, 8) == 0)) continue;//검출벡터에서 검출된것만 처리
+		string add = "";//검출 결과를 저장할 문자열
+		for (int c = 0; c < mat.cols; c++) {//검출벡터의 열만큼 반복
+			add += (' ' + to_string(mat.at<int>(r, c)));//검출벡터를 문자열에 저장
 		}
 
-		string add_file_name = class_names[r] + "_amount_of_storage.txt";
-		ofstream ofs(add_file_name, ios::out | ios::app);
+		string add_file_name = class_names[r] + "_amount_of_storage.txt";//저장할 보관량 파일이름
+		ofstream ofs(add_file_name, ios::out | ios::app);//보관량 파일 open
 
-		ofs.write(add.c_str(), add.size());
-		ofs << "\n";
-		ofs.close();
-		std::cout << class_names[r] + " 식재료 정보를 파일에 기록하였습니다. \n";
+		ofs.write(add.c_str(), add.size());//보관량 파일에 검출문자열 기록
+		ofs << "\n";//줄바꿈
+		ofs.close();//보관량 파일 닫음
+		std::cout << class_names[r] + " 식재료 정보를 파일에 기록하였습니다. \n";//결과를 출력
 	}
-}
+}//검출식재료 저장하는 함수 종료
 
-Mat out_amount_of_storage() {
-	Mat storage_list;
-	for (int r = 0; r < NUM_CLASSES; r++) {
-		string read_file_name = class_names[r] + "_amount_of_storage.txt";
-		ifstream ifs(read_file_name);
+Mat out_amount_of_storage() {//보관량 출력하는 함수
+	Mat storage_list;//전체 보관량을 저장할 행렬
+	for (int r = 0; r < NUM_CLASSES; r++) {//클래스 수 만큼 반복
+		string read_file_name = class_names[r] + "_amount_of_storage.txt";//보관량 파일이름
+		ifstream ifs(read_file_name);//파일 오픈
 
-		string storage_str;
+		string storage_str;//파일의 각줄을 저장할 객체
 
-		if (ifs.is_open())
+		if (ifs.is_open())//파일이 열리면
 		{
-			while (!ifs.eof()) {
-				Mat storage = Mat::zeros(1, 9, CV_32SC1);
-				getline(ifs, storage_str);
-				if (storage_str == "")continue;
-				stringstream ss;
-				ss.str(storage_str);
-				int dump = 0;
+			while (!ifs.eof()) {//파일 마지막줄 까지 반복
+				Mat storage = Mat::zeros(1, 9, CV_32SC1);//보관벡터 초기화
+				getline(ifs, storage_str);//파일의 한줄씩 읽기
+				if (storage_str == "")continue;//만약 내용이 없으면 처리 다음반복문으로
+				stringstream ss;//문자열에서 숫자를 추출하는 객체
+				ss.str(storage_str);//한줄씩 문자열을 저장
+				int dump = 0;//검출 벡터의 첫번째 요소를 버릴 변수생성
 
-				for (int c = 0; c < 9; c++) {
-					if (c == 0) { storage.at<int>(0, c) = r; ss >> dump; }
+				for (int c = 0; c < 9; c++) {//각 줄에서 숫자를 추출해서 보관벡터에 입력
+					if (c == 0) { storage.at<int>(0, c) = r; ss >> dump; }//1요소는 버리고 클래스 번호를 입력
 					else {
-						ss >> storage.at<int>(0, c);
+						ss >> storage.at<int>(0, c);//문자열 숫자를 보관벡터에 입력
 					}
 				}
 
-				if (storage.empty()) continue;
-				storage_list.push_back(storage);
+				if (storage.empty()) continue;//보관벡터가 비어있으면 다음반복문
+				storage_list.push_back(storage);//보관리스트에 한줄을 읽은결과를 저장
 			}
 		}
-		ifs.close();
+		ifs.close();//보관량 파일을 닫음
 	}
 
 	//cout << storage_list << endl; //결과행렬 확인용 코드
 
-	if (storage_list.empty()) { std::cout << "현재 보관된 식재료가 없습니다" << endl; }
-	else {
-		std::cout << "\n\n\n현재 보관된 식재료 정보 \n\n";
+	if (storage_list.empty()) { std::cout << "현재 보관된 식재료가 없습니다" << endl; }//보관리스트가 없으면
+	else {//보관 리스트가 있으면
+		std::cout << "\n\n\n현재 보관된 식재료 정보 \n\n";//결과 출력
 
-		for (int r = 0; r < storage_list.rows; r++) {
-			std::cout << "보관번호: " << r << "   ";
+		for (int r = 0; r < storage_list.rows; r++) {//리스트 행만큼 반복
+			std::cout << "보관번호: " << r << "   ";//보관번호 출력
 
-			for (int name = 0; name < class_names.size(); name++) {
-				if (storage_list.at<int>(r, 0) == name) std::cout << class_names[name] << " - ";
+			for (int name = 0; name < class_names.size(); name++) {//클래스 이름 출력 반복문
+				if (storage_list.at<int>(r, 0) == name) std::cout << class_names[name] << " - ";//클래스 이름 출력
 			}
 
-			time_t dect_day, end;
-			struct tm dect_time;
-			double diff;
+			time_t dect_day, end;//현재 시간과 검출시간을 저장할 객체
+			struct tm dect_time;//dect_day 객체를 만들기 위한 구조체
+			double diff;//날짜차이값 변수
 
 			int remaining_expiration_date, elapsed_day;
 			int de_year = storage_list.at<int>(r, 2);
