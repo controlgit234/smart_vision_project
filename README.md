@@ -1,7 +1,16 @@
 # smart_vision_project
 smart_vision_project
 
-## 작품의 전체코드
+##
+프로그램에서 데이터 처리를 하기 위해 사용할 자료 형식
+
+1. 검출 벡터
+![검출벡터_이미지](https://github.com/controlgit234/smart_vision_project/blob/main/%EA%B2%80%EC%B6%9C%EB%B2%A1%ED%84%B0_%EC%9D%B4%EB%AF%B8%EC%A7%80.JPG)
+
+2. 보관 벡터
+![보관벡터_이미지](https://github.com/controlgit234/smart_vision_project/blob/main/%EB%B3%B4%EA%B4%80%EB%B2%A1%ED%84%B0_%EC%9D%B4%EB%AF%B8%EC%A7%80.JPG)
+
+### 작품의 전체코드
 ```
 //스마트비전 프로젝트 - 주방보조 프로그램
 
